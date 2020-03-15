@@ -24,7 +24,7 @@ __Tentacle__ is a client/server file transfer protocol that aims to be:
 
 Tentacle was created to replace more complex tools like SCP and FTP for simple file transfer/retrieval, and switch from authentication mechanisms like .netrc, interactive logins and SSH keys to X.509 certificates. Simple password authentication over a SSL secured connection is supported too.
 
-Tentacle runs on[IANA](www.iana.org/assignments/port-numbers) assigned port 41121/tcp.
+Tentacle runs on [IANA](www.iana.org/assignments/port-numbers) assigned port 41121/tcp.
 
 The client and server are designed to be run from the command line or called from a shell script, and no configuration files are needed.
 
