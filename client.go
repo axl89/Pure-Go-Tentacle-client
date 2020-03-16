@@ -11,18 +11,20 @@ import (
 	"strings"
 )
 
-var conn, connErr = net.Dial("tcp", "127.0.0.1:41121")
-var w = bufio.NewWriter(conn)
-var r = bufio.NewReader(conn)
-
 // Log messages, true enabled, false disabled
 var logEnabled = true
 
 //Do not output error messages, true enabled, false disabled
 var quiet = false
 
-func printLog(data string) {
+//Client abstracts a Tentacle client
+type Client struct {
+	conn        *net.Conn
+	writeBuffer *bufio.Writer
+	readBuffer  *bufio.Reader
+}
 
+func printLog(data string) {
 	if logEnabled {
 		fmt.Println("[log] " + data)
 	}
@@ -34,19 +36,32 @@ func printError(data string) {
 	}
 }
 
-func send(message string) (string, error) {
-	// Send message
-	wInt, wErr := w.WriteString(message + "\n")
-	w.Flush()
+//Dial a Tentacle server and connects to it
+func Dial(serverAddress string, serverPort string) (*Client, error) {
+	conn, err := net.Dial("tcp", serverAddress+":"+serverPort)
+	if err != nil {
+		printError(err.Error())
+	}
+	w := bufio.NewWriter(conn)
+	r := bufio.NewReader(conn)
+	c := Client{&conn, w, r}
 
-	printLog("We wrote: " + strconv.Itoa(wInt))
+	return &c, err
+}
+
+func (c Client) send(message string) (string, error) {
+	// Send message
+	wInt, wErr := c.writeBuffer.WriteString(message + "\n")
+	c.writeBuffer.Flush()
+
+	printLog("Written " + strconv.Itoa(wInt) + " bytes")
 
 	if wErr != nil {
 		printError(wErr.Error())
 	}
 
 	// wait for reply
-	message, err := r.ReadString('\n')
+	message, err := c.readBuffer.ReadString('\n')
 
 	if err != nil {
 		printError(err.Error())
@@ -56,19 +71,20 @@ func send(message string) (string, error) {
 	return strings.TrimSuffix(message, "\n"), err
 }
 
-func sendByte(data []byte) (string, error) {
-	// Send message
-	wInt, wErr := w.Write(data)
-	w.Flush()
+func (c Client) sendByte(data []byte) (string, error) {
 
-	printLog("We wrote: " + strconv.Itoa(wInt))
+	// Send message
+	wInt, wErr := c.writeBuffer.Write(data)
+	c.writeBuffer.Flush()
+
+	printLog("Written " + strconv.Itoa(wInt) + " bytes")
 
 	if wErr != nil {
 		printError(wErr.Error())
 	}
 
 	// wait for reply
-	message, err := r.ReadString('\n')
+	message, err := c.readBuffer.ReadString('\n')
 
 	if err != nil {
 		printError(err.Error())
@@ -78,21 +94,25 @@ func sendByte(data []byte) (string, error) {
 	return strings.TrimSuffix(message, "\n"), err
 }
 
-func close() (bool, error) {
+//Close the connection to the Tentacle server
+func (c Client) Close() (bool, error) {
 	// Tell Tentacle that we're leaving
 	//fmt.Fprintf(conn, "QUITA\n")
-	send("QUIT")
+
+	c.send("QUIT")
+
+	conn := *c.conn
 	error := conn.Close()
 
 	return error != nil, error
 }
 
 // SendFile sends a file to a Tentacle server
-func SendFile(filePath string) (bool, error) {
+func (c Client) SendFile(filePath string) (bool, error) {
 	fi, err := os.Stat(filePath)
 
 	if err != nil || fi == nil {
-		close()
+		c.Close()
 		printError(err.Error())
 		return false, err
 	}
@@ -103,7 +123,7 @@ func SendFile(filePath string) (bool, error) {
 	fileName := path.Base(filePath)
 
 	// Send request to Tentacle server
-	message, sendErr := send("SEND <" + fileName + "> SIZE " + size)
+	message, sendErr := c.send("SEND <" + fileName + "> SIZE " + size)
 
 	if message != "SEND OK" {
 		printError(message)
@@ -117,20 +137,7 @@ func SendFile(filePath string) (bool, error) {
 		return false, err
 	}
 
-	rMsg, rErr := sendByte(content)
+	rMsg, rErr := c.sendByte(content)
 
 	return rMsg == "SEND OK", rErr
-}
-
-func main() {
-	sendStatus, sendError := SendFile("/tmp/gato.xml")
-	sendStatus2, sendError2 := SendFile("/tmp/gata.xml")
-	// Any error from tentacle?
-	if !sendStatus || !sendStatus2 {
-
-		printError(sendError.Error())
-		printError(sendError2.Error())
-	}
-
-	close()
 }
